@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+langchain
+langchain-community
+faiss-cpu
+dashscope
+python-dotenv
+pydantic
+jinja2
+python-multipart
+
