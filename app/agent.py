@@ -3,6 +3,8 @@ import dashscope
 from app.tools import get_company_info, get_risk_factors
 from app.rag import search_db
 from app.prompts import RISK_ANALYSIS_PROMPT, REPORT_PROMPT
+from app.crypto_client import get_crypto_snapshot
+from app.news_client import get_crypto_news
 from app.config import DASHSCOPE_API_KEY
 
 dashscope.api_key = DASHSCOPE_API_KEY
@@ -11,9 +13,11 @@ dashscope.api_key = DASHSCOPE_API_KEY
 def run_agent(question: str) -> str:
     # 1️⃣ 先用 RAG 查资料
     rag_text, has_local = search_db(question)
+    crypto_text = get_crypto_snapshot(question)
+    news_text = get_crypto_news(question)
 
     # 2️⃣ 统一构造 Prompt（不再只限制“风险”）
-    prompt = _build_prompt(question, rag_text, has_local)
+    prompt = _build_prompt(question, rag_text, has_local, crypto_text, news_text)
 
     # 3️⃣ 调用 Qwen
     response = dashscope.Generation.call(
@@ -25,7 +29,13 @@ def run_agent(question: str) -> str:
     return response["output"]["choices"][0]["message"]["content"]
 
 
-def _build_prompt(question: str, rag_text: str, has_local: bool) -> str:
+def _build_prompt(
+    question: str,
+    rag_text: str,
+    has_local: bool,
+    crypto_text: str,
+    news_text: str,
+) -> str:
     if has_local:
         local_block = f"""
 以下是与用户问题可能相关的本地资料：
@@ -36,21 +46,45 @@ def _build_prompt(question: str, rag_text: str, has_local: bool) -> str:
         local_block = "\n本地资料：无。\n"
         local_rule = "本地资料为空时，回答中禁止出现“本地资料/根据资料/资料依据”等表述。"
 
+    if crypto_text:
+        crypto_block = f"\n以下是可用的加密货币行情数据：\n{crypto_text}\n"
+        crypto_rule = "仅当你确实使用了行情数据时，才可以在回答中提及“行情数据/报价”等表述。"
+    else:
+        crypto_block = ""
+        crypto_rule = ""
+
+    if news_text:
+        news_block = f"\n以下是可用的加密货币资讯：\n{news_text}\n"
+        news_rule = "仅当你确实使用了资讯内容时，才可以在回答中提及“新闻/资讯来源”等表述。"
+    else:
+        news_block = ""
+        news_rule = ""
+
     prompt = f"""
 你是专业金融分析师。
 
 用户问题是：
-{question}
+    {question}
 
-{local_block}
+    {local_block}
+{crypto_block}
+{news_block}
 
-请你基于可用信息和常识，给出清晰、通俗、有结构的回答。
-{local_rule}
+    请你基于可用信息和常识，给出清晰、通俗、有结构的回答。
+    {local_rule}
+{crypto_rule}
+{news_rule}
 """
     return prompt
 
 
-def _build_report_prompt(question: str, rag_text: str, has_local: bool) -> str:
+def _build_report_prompt(
+    question: str,
+    rag_text: str,
+    has_local: bool,
+    crypto_text: str,
+    news_text: str,
+) -> str:
     if has_local:
         local_block = f"以下是与主题可能相关的本地资料：\n{rag_text}\n"
         local_rule = "仅当你确实使用了这些本地资料时，才可以在报告中提及“本地资料/资料依据”等表述。"
@@ -58,16 +92,34 @@ def _build_report_prompt(question: str, rag_text: str, has_local: bool) -> str:
         local_block = "本地资料：无。"
         local_rule = "本地资料为空时，报告中禁止出现“本地资料/根据资料/资料依据”等表述。"
 
+    if crypto_text:
+        crypto_block = f"\n以下是可用的加密货币行情数据：\n{crypto_text}\n"
+        crypto_rule = "仅当你确实使用了行情数据时，才可以在报告中提及“行情数据/报价”等表述。"
+    else:
+        crypto_block = ""
+        crypto_rule = ""
+
+    if news_text:
+        news_block = f"\n以下是可用的加密货币资讯：\n{news_text}\n"
+        news_rule = "仅当你确实使用了资讯内容时，才可以在报告中提及“新闻/资讯来源”等表述。"
+    else:
+        news_block = ""
+        news_rule = ""
+
     return REPORT_PROMPT.format(
         question=question,
-        local_block=local_block,
-        local_rule=local_rule,
+        local_block=local_block + crypto_block + news_block,
+        local_rule=local_rule
+        + ("\n" + crypto_rule if crypto_rule else "")
+        + ("\n" + news_rule if news_rule else ""),
     )
 
 
 def run_report(question: str) -> str:
     rag_text, has_local = search_db(question)
-    prompt = _build_report_prompt(question, rag_text, has_local)
+    crypto_text = get_crypto_snapshot(question)
+    news_text = get_crypto_news(question)
+    prompt = _build_report_prompt(question, rag_text, has_local, crypto_text, news_text)
 
     response = dashscope.Generation.call(
         model="qwen-plus",
@@ -113,9 +165,11 @@ def _extract_content(response) -> str:
 def run_agent_stream(question: str):
     # 1️⃣ 先用 RAG 查资料
     rag_text, has_local = search_db(question)
+    crypto_text = get_crypto_snapshot(question)
+    news_text = get_crypto_news(question)
 
     # 2️⃣ 统一构造 Prompt（不再只限制“风险”）
-    prompt = _build_prompt(question, rag_text, has_local)
+    prompt = _build_prompt(question, rag_text, has_local, crypto_text, news_text)
 
     # 3️⃣ 流式调用 Qwen
     responses = dashscope.Generation.call(
