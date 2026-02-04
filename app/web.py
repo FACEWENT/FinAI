@@ -1,10 +1,12 @@
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, StreamingResponse
+import base64
+from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.schemas import Query, Answer
-from app.agent import run_agent, run_agent_stream
+from app.agent import run_agent, run_agent_stream, run_report
+from app.pdf_utils import build_report_pdf
 
 app = FastAPI(title="FinAI - 金融 AI Agent")
 
@@ -58,3 +60,26 @@ def analyze_sse(question: str):
         media_type="text/event-stream; charset=utf-8",
         headers={"Cache-Control": "no-cache"},
     )
+
+
+# 👉 研究报告 PDF
+@app.post("/report_pdf")
+def report_pdf(q: Query):
+    report_text = run_report(q.question)
+    title = f"研究报告：{q.question}"
+    pdf_buffer = build_report_pdf(title, report_text)
+    return StreamingResponse(
+        pdf_buffer,
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=research_report.pdf"},
+    )
+
+
+# 👉 研究报告文本 + PDF（一次生成）
+@app.post("/report_bundle")
+def report_bundle(q: Query):
+    report_text = run_report(q.question)
+    title = f"研究报告：{q.question}"
+    pdf_buffer = build_report_pdf(title, report_text)
+    pdf_b64 = base64.b64encode(pdf_buffer.getvalue()).decode("utf-8")
+    return JSONResponse({"result": report_text, "pdf_base64": pdf_b64})

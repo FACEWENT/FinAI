@@ -2,7 +2,7 @@ from http import HTTPStatus
 import dashscope
 from app.tools import get_company_info, get_risk_factors
 from app.rag import search_db
-from app.prompts import RISK_ANALYSIS_PROMPT
+from app.prompts import RISK_ANALYSIS_PROMPT, REPORT_PROMPT
 from app.config import DASHSCOPE_API_KEY
 
 dashscope.api_key = DASHSCOPE_API_KEY
@@ -48,6 +48,34 @@ def _build_prompt(question: str, rag_text: str, has_local: bool) -> str:
 {local_rule}
 """
     return prompt
+
+
+def _build_report_prompt(question: str, rag_text: str, has_local: bool) -> str:
+    if has_local:
+        local_block = f"以下是与主题可能相关的本地资料：\n{rag_text}\n"
+        local_rule = "仅当你确实使用了这些本地资料时，才可以在报告中提及“本地资料/资料依据”等表述。"
+    else:
+        local_block = "本地资料：无。"
+        local_rule = "本地资料为空时，报告中禁止出现“本地资料/根据资料/资料依据”等表述。"
+
+    return REPORT_PROMPT.format(
+        question=question,
+        local_block=local_block,
+        local_rule=local_rule,
+    )
+
+
+def run_report(question: str) -> str:
+    rag_text, has_local = search_db(question)
+    prompt = _build_report_prompt(question, rag_text, has_local)
+
+    response = dashscope.Generation.call(
+        model="qwen-plus",
+        messages=[{"role": "user", "content": prompt}],
+        result_format="message",
+    )
+
+    return response["output"]["choices"][0]["message"]["content"]
 
 
 def _extract_content(response) -> str:
