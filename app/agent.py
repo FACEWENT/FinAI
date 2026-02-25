@@ -2,9 +2,10 @@ from http import HTTPStatus
 import dashscope
 from app.tools import get_company_info, get_risk_factors
 from app.rag import search_db
-from app.prompts import RISK_ANALYSIS_PROMPT, REPORT_PROMPT
+from app.prompts import RISK_ANALYSIS_PROMPT, REPORT_PROMPT, RESEARCH_REPORT_PROMPT
 from app.crypto_client import get_crypto_snapshot
 from app.news_client import get_crypto_news
+from app.research_pipeline import run_research
 from app.config import DASHSCOPE_API_KEY
 
 dashscope.api_key = DASHSCOPE_API_KEY
@@ -128,6 +129,36 @@ def run_report(question: str) -> str:
     )
 
     return response["output"]["choices"][0]["message"]["content"]
+
+
+def run_research_report(question: str, pdf_urls: list[str]) -> tuple[str, list[dict], dict]:
+    data = run_research(question, pdf_urls)
+    context_parts = []
+    if data.extracted_text:
+        context_parts.append("【PDF提取内容】\n" + data.extracted_text)
+    if data.search_context:
+        context_parts.append("【自动搜索】\n" + data.search_context)
+    if data.crypto_context:
+        context_parts.append("【行情数据】\n" + data.crypto_context)
+    if data.news_context:
+        context_parts.append("【资讯】\n" + data.news_context)
+
+    context = "\n\n".join(context_parts) or "无"
+
+    prompt = RESEARCH_REPORT_PROMPT.format(
+        question=question,
+        context=context,
+    )
+
+    response = dashscope.Generation.call(
+        model="qwen-plus",
+        messages=[{"role": "user", "content": prompt}],
+        result_format="message",
+    )
+
+    report_text = response["output"]["choices"][0]["message"]["content"]
+    sources = [{"title": s.title, "url": s.url, "snippet": s.snippet} for s in data.sources]
+    return report_text, sources, data.chart_data
 
 
 def _extract_content(response) -> str:

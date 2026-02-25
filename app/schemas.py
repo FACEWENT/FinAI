@@ -5,3 +5,8 @@ class Query(BaseModel):
 
 class Answer(BaseModel):
     result: str
+
+
+class ResearchQuery(BaseModel):
+    question: str
+    pdf_urls: list[str] = []
