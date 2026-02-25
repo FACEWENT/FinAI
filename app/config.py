@@ -12,3 +12,5 @@ CHAIN_GPT_RSS_URL = os.getenv("CHAIN_GPT_RSS_URL", "https://app.chaingpt.org/rss
 LOCAL_PDF_DIR = os.getenv("LOCAL_PDF_DIR", "")
 MAX_PDF_FILES = int(os.getenv("MAX_PDF_FILES", "5"))
 MAX_PDF_PAGES = int(os.getenv("MAX_PDF_PAGES", "6"))
+SEARCH_PROVIDER = os.getenv("SEARCH_PROVIDER", "duckduckgo")
+SEARXNG_URL = os.getenv("SEARXNG_URL", "")

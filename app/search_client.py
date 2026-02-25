@@ -5,6 +5,8 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 import requests
 
+from app.config import SEARCH_PROVIDER, SEARXNG_URL
+
 
 def _normalize_duckduckgo_url(url: str) -> str:
     # DuckDuckGo may wrap URLs via /l/?uddg=
@@ -20,7 +22,7 @@ def _normalize_duckduckgo_url(url: str) -> str:
     return url
 
 
-def search_web(query: str, max_results: int = 5) -> List[dict]:
+def _search_duckduckgo(query: str, max_results: int = 5) -> List[dict]:
     if not query:
         return []
 
@@ -48,3 +50,40 @@ def search_web(query: str, max_results: int = 5) -> List[dict]:
             break
 
     return results
+
+
+def _search_searxng(query: str, max_results: int = 5) -> List[dict]:
+    if not query or not SEARXNG_URL:
+        return []
+    try:
+        resp = requests.get(
+            f"{SEARXNG_URL.rstrip('/')}/search",
+            params={"q": query, "format": "json"},
+            timeout=8,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception:
+        return []
+
+    results = []
+    for item in data.get("results", []):
+        title = (item.get("title") or "").strip()
+        url = (item.get("url") or "").strip()
+        if not title or not url:
+            continue
+        results.append({"title": title, "url": url, "snippet": item.get("content", "") or ""})
+        if len(results) >= max_results:
+            break
+    return results
+
+
+def search_web(query: str, max_results: int = 5) -> List[dict]:
+    provider = (SEARCH_PROVIDER or "duckduckgo").lower()
+    if provider == "searxng":
+        results = _search_searxng(query, max_results=max_results)
+        if results:
+            return results
+        # fallback
+        return _search_duckduckgo(query, max_results=max_results)
+    return _search_duckduckgo(query, max_results=max_results)
